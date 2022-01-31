@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -87,6 +89,37 @@ func handler(wr http.ResponseWriter, req *http.Request) {
 		sendServerHostnameString,
 		"false",
 	)
+
+	if v := os.Getenv("HTTP_AVG_RESPONSE_TIME"); v != "" {
+		avgD, err := time.ParseDuration(v)
+		if err != nil {
+			wr.WriteHeader(http.StatusInternalServerError)
+			wr.Write([]byte(err.Error()))
+			return
+		}
+
+		var maxD time.Duration
+		if v := os.Getenv("HTTP_MAX_RESPONSE_TIME"); v != "" {
+			maxD, err = time.ParseDuration(v)
+			if err != nil {
+				wr.WriteHeader(http.StatusInternalServerError)
+				wr.Write([]byte(err.Error()))
+				return
+			}
+		}
+
+		waitD := time.Duration(expovariate(1 / float64(avgD)))
+		if maxD > 0 && waitD > maxD {
+			waitD = maxD
+		}
+		if waitD < 0 {
+			waitD = 0
+		}
+		if waitD > 0 {
+			fmt.Printf("Sleeping for %s...\n", waitD.String())
+			time.Sleep(waitD)
+		}
+	}
 
 	if websocket.IsWebSocketUpgrade(req) {
 		serveWebSocket(wr, req, sendServerHostname)
@@ -270,4 +303,8 @@ func writeRequest(w io.Writer, req *http.Request) {
 		fmt.Fprintln(w, "")
 		body.WriteTo(w) // nolint:errcheck
 	}
+}
+
+func expovariate(lambda float64) float64 {
+	return -math.Log(1-rand.Float64()) / lambda
 }
